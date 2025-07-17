@@ -1,149 +1,189 @@
-import express from 'express';
-import StudyGroup from '../models/StudyGroup.js';
-import User from '../models/User.js';
-
+const express = require('express');
+const { authenticateToken } = require('../middleware/auth');
+const { validateStudyGroup } = require('../middleware/validation');
+const StudyGroup = require('../models/StudyGroup');
 
 const router = express.Router();
 
-// GET /api/study-groups
+// Get all study groups
 router.get('/', async (req, res) => {
   try {
     const { subject, search, limit = 10, offset = 0 } = req.query;
-
-    const query = { isActive: true };
-
-    if (subject) query.subject = subject;
+    
+    let query = { isActive: true };
+    
+    // Filter by subject
+    if (subject && subject !== 'all') {
+      query.subject = new RegExp(subject, 'i');
+    }
+    
+    // Search functionality
     if (search) {
+      const searchRegex = new RegExp(search, 'i');
       query.$or = [
-        { name: new RegExp(search, 'i') },
-        { subject: new RegExp(search, 'i') },
-        { description: new RegExp(search, 'i') }
+        { name: searchRegex },
+        { subject: searchRegex },
+        { description: searchRegex }
       ];
     }
-
+    
     const studyGroups = await StudyGroup.find(query)
       .populate('createdBy', 'firstName lastName')
       .populate('members', 'firstName lastName')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
-      .skip(parseInt(offset))
-      .lean();
-
-    res.json(studyGroups);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+      .skip(parseInt(offset));
+    
+    const total = await StudyGroup.countDocuments(query);
+    
+    res.json({
+      studyGroups,
+      total,
+      hasMore: parseInt(offset) + parseInt(limit) < total
+    });
+  } catch (error) {
+    console.error('Get study groups error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// POST /api/study-groups
+// Get single study group
+router.get('/:id', async (req, res) => {
+  try {
+    const studyGroup = await StudyGroup.findById(req.params.id)
+      .populate('createdBy', 'firstName lastName')
+      .populate('members', 'firstName lastName');
+    
+    if (!studyGroup) {
+      return res.status(404).json({ message: 'Study group not found' });
+    }
+    
+    res.json({ studyGroup });
+  } catch (error) {
+    console.error('Get study group error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Create study group
 router.post('/', authenticateToken, validateStudyGroup, async (req, res) => {
   try {
-    const { name, subject, description, capacity } = req.body;
-
-    const newGroup = new StudyGroup({
+    const { name, subject, description, maxMembers, meetingSchedule, location } = req.body;
+    
+    const newStudyGroup = new StudyGroup({
       name,
       subject,
       description,
-      capacity,
+      maxMembers: parseInt(maxMembers),
+      members: [req.user.userId], // Creator automatically joins
       createdBy: req.user.userId,
-      members: [req.user.userId]
+      meetingSchedule: meetingSchedule || 'TBD',
+      location: location || 'TBD'
     });
-
-    const savedGroup = await newGroup.save();
-    res.status(201).json(savedGroup);
-  } catch (err) {
-    res.status(500).json({ message: 'Error creating group', error: err.message });
+    
+    await newStudyGroup.save();
+    await newStudyGroup.populate('createdBy', 'firstName lastName');
+    await newStudyGroup.populate('members', 'firstName lastName');
+    
+    res.status(201).json({
+      message: 'Study group created successfully',
+      studyGroup: newStudyGroup
+    });
+  } catch (error) {
+    console.error('Create study group error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// GET /api/study-groups/user/my-groups
-router.get('/user/my-groups', authenticateToken, async (req, res) => {
-  try {
-    const myGroups = await StudyGroup.find({
-      members: req.user.userId,
-      isActive: true
-    })
-      .populate('createdBy', 'firstName lastName')
-      .populate('members', 'firstName lastName')
-      .sort({ createdAt: -1 });
-
-    res.json(myGroups);
-  } catch (err) {
-    res.status(500).json({ message: 'Error fetching my groups', error: err.message });
-  }
-});
-
-// GET /api/study-groups/:id
-router.get('/:id', authenticateToken, async (req, res) => {
-  try {
-    const group = await StudyGroup.findById(req.params.id)
-      .populate('createdBy', 'firstName lastName')
-      .populate('members', 'firstName lastName');
-
-    if (!group || !group.isActive) {
-      return res.status(404).json({ message: 'Study group not found' });
-    }
-
-    res.json(group);
-  } catch (err) {
-    res.status(500).json({ message: 'Error fetching group', error: err.message });
-  }
-});
-
-// POST /api/study-groups/:id/join
+// Join study group
 router.post('/:id/join', authenticateToken, async (req, res) => {
   try {
-    const group = await StudyGroup.findById(req.params.id);
-
-    if (!group || !group.isActive) {
+    const studyGroup = await StudyGroup.findById(req.params.id);
+    if (!studyGroup) {
       return res.status(404).json({ message: 'Study group not found' });
     }
-
-    if (group.members.includes(req.user.userId)) {
-      return res.status(400).json({ message: 'Already a member' });
+    
+    if (!studyGroup.isActive) {
+      return res.status(400).json({ message: 'Study group is not active' });
     }
-
-    if (group.members.length >= group.capacity) {
+    
+    // Check if already a member
+    if (studyGroup.members.includes(req.user.userId)) {
+      return res.status(400).json({ message: 'Already a member of this study group' });
+    }
+    
+    // Check if group is full
+    if (studyGroup.members.length >= studyGroup.maxMembers) {
       return res.status(400).json({ message: 'Study group is full' });
     }
-
-    group.members.push(req.user.userId);
-    await group.save();
-
-    res.json({ message: 'Joined successfully', groupId: group._id });
-  } catch (err) {
-    res.status(500).json({ message: 'Error joining group', error: err.message });
+    
+    studyGroup.members.push(req.user.userId);
+    await studyGroup.save();
+    
+    res.json({
+      message: 'Successfully joined study group',
+      memberCount: studyGroup.members.length
+    });
+  } catch (error) {
+    console.error('Join study group error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// POST /api/study-groups/:id/leave
+// Leave study group
 router.post('/:id/leave', authenticateToken, async (req, res) => {
   try {
-    const group = await StudyGroup.findById(req.params.id);
-
-    if (!group) {
+    const studyGroup = await StudyGroup.findById(req.params.id);
+    if (!studyGroup) {
       return res.status(404).json({ message: 'Study group not found' });
     }
-
-    group.members = group.members.filter(
-      (memberId) => memberId.toString() !== req.user.userId
-    );
-
-    // If user was creator and is leaving, assign new creator
-    if (group.createdBy.toString() === req.user.userId && group.members.length > 0) {
-      group.createdBy = group.members[0];
+    
+    const memberIndex = studyGroup.members.indexOf(req.user.userId);
+    if (memberIndex === -1) {
+      return res.status(400).json({ message: 'Not a member of this study group' });
     }
-
-    // Deactivate group if empty
-    if (group.members.length === 0) {
-      group.isActive = false;
+    
+    // If creator is leaving and there are other members, transfer ownership
+    if (studyGroup.createdBy.toString() === req.user.userId && studyGroup.members.length > 1) {
+      const newCreator = studyGroup.members.find(id => id.toString() !== req.user.userId);
+      studyGroup.createdBy = newCreator;
     }
-
-    await group.save();
-    res.json({ message: 'Left study group', groupId: group._id });
-  } catch (err) {
-    res.status(500).json({ message: 'Error leaving group', error: err.message });
+    
+    studyGroup.members.splice(memberIndex, 1);
+    
+    // If no members left, deactivate the group
+    if (studyGroup.members.length === 0) {
+      studyGroup.isActive = false;
+    }
+    
+    await studyGroup.save();
+    
+    res.json({
+      message: 'Successfully left study group',
+      memberCount: studyGroup.members.length
+    });
+  } catch (error) {
+    console.error('Leave study group error:', error);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-export default router;
+// Get user's study groups
+router.get('/user/my-groups', authenticateToken, async (req, res) => {
+  try {
+    const userGroups = await StudyGroup.find({ 
+      members: req.user.userId, 
+      isActive: true 
+    })
+    .populate('createdBy', 'firstName lastName')
+    .populate('members', 'firstName lastName')
+    .sort({ createdAt: -1 });
+    
+    res.json({ studyGroups: userGroups });
+  } catch (error) {
+    console.error('Get user study groups error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+module.exports = router;
