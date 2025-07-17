@@ -28,7 +28,7 @@ const io = socketIo(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
       ? [process.env.FRONTEND_URL].filter(Boolean)
-      : ['http://localhost:5173', 'http://localhost:4173'],
+      : ['https://sage-concha-9db2ea.netlify.app', 'https://sage-concha-9db2ea.netlify.app'],
     methods: ['GET', 'POST']
   }
 });
@@ -66,7 +66,7 @@ app.use('/api/', limiter);
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? [process.env.FRONTEND_URL].filter(Boolean)
-    : ['http://localhost:5173', 'http://localhost:4173'],
+    : ['https://sage-concha-9db2ea.netlify.app', 'https://sage-concha-9db2ea.netlify.app'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
