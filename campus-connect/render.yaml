@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: campus-connect-backend
+    env: node
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: MONGO_URI
+        fromDatabase:
+          name: campus-connect-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://your-frontend-domain.com
+      - key: SUPABASE_URL
+        value: your-supabase-url
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: your-supabase-service-role-key
+      - key: STRIPE_SECRET_KEY
+        value: your-stripe-secret-key
+      - key: STRIPE_WEBHOOK_SECRET
+        value: your-stripe-webhook-secret
+
+databases:
+  - name: campus-connect-db
+    databaseName: campus_connect_prod
+    user: campus_connect_user
