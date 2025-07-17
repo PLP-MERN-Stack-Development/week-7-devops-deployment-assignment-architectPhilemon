@@ -207,7 +207,7 @@ server.listen(PORT, () => {
   console.log(`🚀 Campus Connect API running on port ${PORT}`);
   console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️ Database: MongoDB`);
-  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'Not configured'}`);
+  console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'https://adorable-kataifi-91d952.netlify.app/'}`);
   console.log(`💬 Socket.IO enabled for real-time chat`);
 });
 
