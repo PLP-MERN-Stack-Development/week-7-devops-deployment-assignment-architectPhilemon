@@ -1,8 +1,8 @@
 import express from 'express';
 import StudyGroup from '../models/StudyGroup.js';
 import User from '../models/User.js';
-import authenticateToken from '../middleware/authenticateToken.js';
-import validateStudyGroup from '../middleware/validateStudyGroup.js';
+import authenticateToken from '../middleware/auth.js';
+import validateStudyGroup from '../middleware/validate.js';
 
 const router = express.Router();
 
